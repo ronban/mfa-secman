@@ -1,0 +1,4 @@
+requests
+pyotp
+boto3
+botocore

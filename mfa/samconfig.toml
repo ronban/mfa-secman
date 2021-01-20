@@ -1,0 +1,12 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "mfa-secman"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1tfd12c9ggjop"
+s3_prefix = "mfa-secman"
+region = "us-east-1"
+confirm_changeset = true
+capabilities = "CAPABILITY_NAMED_IAM"
+parameter_overrides = "RootMFAAccountID=\"112233445566\" SecurityAccountID=\"123456789012\""
+

@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  mfa-secman
+
+  Sample SAM Template for mfa-secman
+Parameters:
+  RootMFAAccountID:
+    Type: Number
+    Description: The account number of the AWS account
+  SecurityAccountID:
+    Type: Number
+    Default: 123456789012
+    Description: The account number of the security AWS account
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Function:
+    Timeout: 12
+
+Resources:
+  TOTPFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'rootmfa_${RootMFAAccountID}'
+      CodeUri: totp/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Role: !GetAtt TOTPFunctionRole.Arn
+  TOTPFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'TOTP_Read_${RootMFAAccountID}_Role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: totp_read__policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Sub 'arn:aws:secretsmanager:us-east-1:${AWS::AccountId}:secret:rootmfa_${RootMFAAccountID}-*'
+  LambdaInvokeRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'LambdaRootMFA_${RootMFAAccountID}_Role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub
+                - arn:aws:iam::${consumer_account}:root
+                - { consumer_account: !Ref SecurityAccountID }
+            Action: 
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: invoke_function_policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt TOTPFunction.Arn
+  RootMFAWriteTokenRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'RootMFA_${RootMFAAccountID}_WriteTokenRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub
+                - arn:aws:iam::${consumer_account}:root
+                - { consumer_account: !Ref SecurityAccountID }
+            Action: 
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: write_token_policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:UpdateSecret
+                Resource: !Ref RootMFAToken
+  RootMFAToken:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub 'rootmfa_${RootMFAAccountID}'
+      Description: !Sub 
+        - Root MFA for Account ${consumer_account}
+        - { consumer_account: !Ref RootMFAAccountID }
+      SecretString: '{"root_mfa_token": ""}'
+
+Outputs:
+  TOTPFunctionName:
+    Description: "TOTP Function ARN"
+    Value: !GetAtt TOTPFunction.Arn
+  LambdaFunctionRoleIam:
+    Description: "Implicit IAM Role created to access TOTP Function"
+    Value: !GetAtt LambdaInvokeRole.Arn
